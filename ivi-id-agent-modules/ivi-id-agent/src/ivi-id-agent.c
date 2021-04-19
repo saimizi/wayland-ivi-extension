@@ -26,8 +26,8 @@
 #include <limits.h>
 
 #include <weston.h>
-#include <libweston-6/libweston-desktop.h>
-#include "config-parser.h"
+#include <libweston-10/libweston-desktop/libweston-desktop.h>
+#include <libweston-10/libweston/config-parser.h>
 #include <weston/ivi-layout-export.h>
 
 #ifndef INVALID_ID

@@ -22,14 +22,11 @@ project (simple-weston-client)
 find_package(PkgConfig)
 pkg_check_modules(WAYLAND_CLIENT wayland-client REQUIRED)
 pkg_check_modules(WAYLAND_CURSOR wayland-cursor REQUIRED)
-pkg_check_modules(LIBWESTON_PROTOCOLS libweston-6-protocols QUIET)
+pkg_check_modules(LIBWESTON_PROTOCOLS libweston-10-protocols QUIET)
 
 if(${LIBWESTON_PROTOCOLS_FOUND})
-    #check for DLT
-    pkg_check_modules(DLT automotive-dlt QUIET)
-
     #import the pkgdatadir from libweston-protocols pkgconfig file
-    execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --variable=pkgdatadir libweston-6-protocols
+    execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --variable=pkgdatadir libweston-10-protocols
                     OUTPUT_VARIABLE WestonProtocols_PKGDATADIR)
     string(REGEX REPLACE "[\r\n]" "" WestonProtocols_PKGDATADIR "${WestonProtocols_PKGDATADIR}")
     SET(LIBWESTON_PROTOCOLS_PKGDATADIR ${WestonProtocols_PKGDATADIR})
@@ -117,15 +114,6 @@ add_executable(${PROJECT_NAME} ${SRC_FILES} ${WESTON_DEBUG_SRC_FILES})
 add_dependencies(${PROJECT_NAME} ${LIBS})
 
 add_definitions(${DLT_CFLAGS})
-
-if(${DLT_FOUND})
-    add_definitions(-DDLT)
-endif(${DLT_FOUND})
-
-if(${LIBWESTON_PROTOCOLS_FOUND})
-    add_definitions(-DLIBWESTON_DEBUG_PROTOCOL)
-    target_link_libraries(${PROJECT_NAME} pthread)
-endif(${LIBWESTON_PROTOCOLS_FOUND})
 
 target_link_libraries(${PROJECT_NAME} ${LIBS})
 
