@@ -39,7 +39,7 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT  ivi-wm-protocol.c
-    COMMAND ${WAYLAND_SCANNER_EXECUTABLE} code
+    COMMAND ${WAYLAND_SCANNER_EXECUTABLE} public-code
             < ${CMAKE_SOURCE_DIR}/protocol/ivi-wm.xml
             > ${CMAKE_CURRENT_BINARY_DIR}/ivi-wm-protocol.c
     DEPENDS ${CMAKE_SOURCE_DIR}/protocol/ivi-wm.xml

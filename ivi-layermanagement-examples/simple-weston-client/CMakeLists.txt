@@ -44,7 +44,7 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT  ivi-application-protocol.c
-    COMMAND ${WAYLAND_SCANNER_EXECUTABLE} code
+    COMMAND ${WAYLAND_SCANNER_EXECUTABLE} public-code
             < ${CMAKE_SOURCE_DIR}/protocol/ivi-application.xml
             > ${CMAKE_CURRENT_BINARY_DIR}/ivi-application-protocol.c
     DEPENDS ${CMAKE_SOURCE_DIR}/protocol/ivi-application.xml
@@ -69,7 +69,7 @@ if(${LIBWESTON_PROTOCOLS_FOUND})
 
     add_custom_command(
         OUTPUT  weston-debug-protocol.c
-        COMMAND ${WAYLAND_SCANNER_EXECUTABLE} code
+        COMMAND ${WAYLAND_SCANNER_EXECUTABLE} public-code
                 < ${LIBWESTON_PROTOCOLS_PKGDATADIR}/weston-debug.xml
                 > ${CMAKE_CURRENT_BINARY_DIR}/weston-debug-protocol.c
         DEPENDS ${LIBWESTON_PROTOCOLS_PKGDATADIR}/weston-debug.xml
