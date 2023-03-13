@@ -54,6 +54,7 @@ set(LIBS
     ${LIBS}
     ${WAYLAND_SERVER_LIBRARIES}
     ${LIBWESTON_DESKTOP_LIBRARIES}
+    hiredis
 )
 
 set(CMAKE_C_LDFLAGS "-module -avoid-version")

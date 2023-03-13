@@ -29,6 +29,7 @@
 #include <libweston-desktop/libweston-desktop.h>
 #include <libweston/config-parser.h>
 #include <ivi-layout-export.h>
+#include <hiredis/hiredis.h>
 
 #ifndef INVALID_ID
 #define INVALID_ID 0xFFFFFFFF
@@ -51,11 +52,89 @@ struct ivi_id_agent
     struct wl_list app_list;
     struct weston_compositor *compositor;
     const struct ivi_layout_interface *interface;
+    redisContext *redis_ctx;
 
     struct wl_listener desktop_surface_configured;
     struct wl_listener destroy_listener;
     struct wl_listener surface_removed;
 };
+
+#define valid_redis_ctx(c) (c && !c->err)
+#define REDIS_SERVER_IP "127.0.0.1"
+#define REDIS_SERVER_PORT 6379
+
+static void redis_reg(struct ivi_id_agent *ida,
+		const char* app_id, int32_t surface_id)
+{
+	do {
+		if (!ida || !valid_redis_ctx(ida->redis_ctx))
+			break;
+
+		if (!app_id)
+			break;
+
+		if (surface_id <= 0)
+			break;
+
+		weston_log("%s - %d register: %s@%d\n",
+				__func__, __LINE__,
+				app_id, surface_id);
+
+		redisReply *reply = redisCommand(ida->redis_ctx,
+				"SET %s %d",
+				app_id,
+				surface_id);
+		freeReplyObject(reply);
+
+		reply = redisCommand(ida->redis_ctx,
+				"SET SURID-%d %s",
+				surface_id,
+				app_id);
+		freeReplyObject(reply);
+		weston_log("Registerred %s@%d\n",
+			app_id, surface_id);
+
+	} while(0);
+
+}
+
+static void redis_unreg(struct ivi_id_agent *ida, int32_t surface_id)
+{
+	char *app_id = NULL;
+
+	do {
+		if (!ida || !valid_redis_ctx(ida->redis_ctx))
+			break;
+
+		if (surface_id <= 0)
+			break;
+
+		redisReply *reply = redisCommand(ida->redis_ctx,
+				"GET SURID-%d",
+				surface_id);
+		if (reply->str)
+			app_id = strdup(reply->str);
+		freeReplyObject(reply);
+
+		reply = redisCommand(ida->redis_ctx,
+				"DEL SURID-%d",
+				surface_id);
+		freeReplyObject(reply);
+
+		if (app_id) {
+			reply = redisCommand(ida->redis_ctx,
+					"DEL %s", app_id);
+			freeReplyObject(reply);
+			weston_log("Unregisterred %s@%d\n",
+					app_id, surface_id);
+		}
+
+	} while(0);
+
+	if (app_id)
+		free(app_id);
+
+}
 
 static int32_t
 check_config_parameter(char *cfg_val, char *val)
@@ -70,24 +149,9 @@ check_config_parameter(char *cfg_val, char *val)
 
 static int32_t
 get_id_from_config(struct ivi_id_agent *ida, struct ivi_layout_surface
-        *layout_surface) {
+        *layout_surface, char *temp_app_id, char *temp_title) {
     struct db_elem *db_elem;
-    char *temp_app_id = NULL;
-    char *temp_title = NULL;
     int ret = IVI_FAILED;
-
-    struct weston_surface *weston_surface =
-            ida->interface->surface_get_weston_surface(layout_surface);
-
-    /* Get app id and title */
-    struct weston_desktop_surface *wds = weston_surface_get_desktop_surface(
-            weston_surface);
-
-    if (weston_desktop_surface_get_app_id(wds) != NULL)
-        temp_app_id = strdup(weston_desktop_surface_get_app_id(wds));
-
-    if (weston_desktop_surface_get_title(wds) != NULL)
-        temp_title = strdup(weston_desktop_surface_get_title(wds));
 
     /*
      * Check for every config parameter to be fulfilled. This part must be
@@ -106,13 +170,11 @@ get_id_from_config(struct ivi_id_agent *ida, struct ivi_layout_surface
                 db_elem->layout_surface = layout_surface;
                 ret = IVI_SUCCEEDED;
 
+		redis_reg(ida, temp_app_id, db_elem->surface_id);
                 break;
             }
         }
     }
-
-    free(temp_app_id);
-    free(temp_title);
 
     return ret;
 }
@@ -127,46 +189,83 @@ get_id_from_config(struct ivi_id_agent *ida, struct ivi_layout_surface
 static int32_t
 get_id(struct ivi_id_agent *ida, struct ivi_layout_surface *layout_surface)
 {
-    if (get_id_from_config(ida, layout_surface) == IVI_SUCCEEDED)
-        return IVI_SUCCEEDED;
+    char *temp_app_id = NULL;
+    char *temp_title = NULL;
+    int32_t ret = IVI_SUCCEEDED;
 
-    /* No default layer available */
-    if (ida->default_behavior_set == 0) {
-        weston_log("ivi-id-agent: Could not find configuration for application\n");
-        goto ivi_failed;
+    do {
 
-    /* Default behavior for unknown applications */
-    } else if (ida->default_surface_id < ida->default_surface_id_max) {
-        weston_log("ivi-id-agent: No configuration for application adding to "
-                "default layer\n");
+	    struct weston_surface *weston_surface =
+		    ida->interface->surface_get_weston_surface(layout_surface);
 
-        /*
-         * Check if ivi-shell application already created an application with
-         * desired surface_id
-         */
-        struct ivi_layout_surface *temp_layout_surf =
-                ida->interface->get_surface_from_id(
-                        ida->default_surface_id);
-        if ((temp_layout_surf != NULL) && (temp_layout_surf != layout_surface)) {
-            weston_log("ivi-id-agent: surface_id already used by an ivi-shell "
-                                "application\n");
-            goto ivi_failed;
-        }
+	    /* Get app id and title */
+	    struct weston_desktop_surface *wds = weston_surface_get_desktop_surface(
+		    weston_surface);
 
-        ida->interface->surface_set_id(layout_surface,
-                                              ida->default_surface_id);
-        ida->default_surface_id++;
+	    if (weston_desktop_surface_get_app_id(wds) != NULL)
+		temp_app_id = strdup(weston_desktop_surface_get_app_id(wds));
 
-    } else {
-        weston_log("ivi-id-agent: Interval for default surface_id generation "
-                "exceeded\n");
-        goto ivi_failed;
-    }
+	    if (temp_app_id)
+		    weston_log("Found Application: %s\n", temp_app_id);
 
-    return IVI_SUCCEEDED;
+	    if (weston_desktop_surface_get_title(wds) != NULL)
+		temp_title = strdup(weston_desktop_surface_get_title(wds));
 
-ivi_failed:
-    return IVI_FAILED;
+
+
+	    if (get_id_from_config(ida, layout_surface,
+			temp_app_id, temp_title) == IVI_SUCCEEDED)
+		break;
+
+
+	    /* No default layer available */
+	    if (ida->default_behavior_set == 0) {
+		weston_log("ivi-id-agent: Could not find configuration for application\n");
+		ret = IVI_FAILED;
+		break;
+
+	    /* Default behavior for unknown applications */
+	    } else if (ida->default_surface_id < ida->default_surface_id_max) {
+		weston_log("ivi-id-agent: No configuration for application adding to "
+			"default layer\n");
+
+		/*
+		 * Check if ivi-shell application already created an application with
+		 * desired surface_id
+		 */
+		struct ivi_layout_surface *temp_layout_surf =
+			ida->interface->get_surface_from_id(
+				ida->default_surface_id);
+
+		if ((temp_layout_surf != NULL) && (temp_layout_surf != layout_surface)) {
+		    weston_log("ivi-id-agent: surface_id already used by an ivi-shell "
+					"application\n");
+		    ret = IVI_FAILED;
+		    break;
+		}
+
+		ida->interface->surface_set_id(layout_surface,
+						ida->default_surface_id);
+		redis_reg(ida, (const char *)temp_app_id,
+				ida->default_surface_id);
+
+		ida->default_surface_id++;
+
+	    } else {
+		weston_log("ivi-id-agent: Interval for default surface_id generation "
+			"exceeded\n");
+		ret = IVI_FAILED;
+		break;
+	    }
+    } while (0);
+
+    if (temp_app_id)
+	    free(temp_app_id);
+
+    if (temp_title)
+	    free(temp_title);
+
+    return ret;
 }
 
 static void
@@ -198,6 +297,9 @@ surface_event_remove(struct wl_listener *listener, void *data) {
             break;
         }
     }
+
+    int32_t surface_id = ida->interface->get_id_of_surface(layout_surface);
+    redis_unreg(ida, surface_id);
 }
 
 static int32_t deinit(struct ivi_id_agent *ida);
@@ -343,6 +445,26 @@ id_agent_module_init(struct weston_compositor *compositor,
     ida->desktop_surface_configured.notify = desktop_surface_event_configure;
     ida->destroy_listener.notify = id_agent_module_deinit;
     ida->surface_removed.notify = surface_event_remove;
+
+    int retry = 10;
+    weston_log("Try to connect REDIS server %s:%d\n",
+		    REDIS_SERVER_IP,
+		    REDIS_SERVER_PORT);
+    while (!valid_redis_ctx(ida->redis_ctx)) {
+	ida->redis_ctx = redisConnect(REDIS_SERVER_IP,
+				REDIS_SERVER_PORT);
+	if (retry-- == 0) {
+	    weston_log("Failed to connect REDIS server.\n");
+	    break;
+	}
+
+	sleep(1);
+    }
+
+    if (valid_redis_ctx(ida->redis_ctx)) {
+	    weston_log("Connected to REDIS server successfully.\n");
+    }
+
 
     wl_signal_add(&compositor->destroy_signal, &ida->destroy_listener);
     ida->interface->add_listener_configure_desktop_surface(
