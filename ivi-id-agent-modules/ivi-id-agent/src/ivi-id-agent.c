@@ -67,14 +67,22 @@ static void redis_reg(struct ivi_id_agent *ida,
 		const char* app_id, int32_t surface_id)
 {
 	do {
-		if (!ida || !valid_redis_ctx(ida->redis_ctx))
+		if (!app_id) {
+			weston_log("Warning: %s - %d skip redis registration for null app id.\n", __func__, __LINE__);
 			break;
+		}
 
-		if (!app_id)
+		if (surface_id <= 0) {
+			weston_log("Warning: %s - %d skip redis registration for invalud surface id: %d.\n", __func__, __LINE__, surface_id);
 			break;
+		}
 
-		if (surface_id <= 0)
+		if (!ida || !valid_redis_ctx(ida->redis_ctx)) {
+			weston_log("Warning: %s - %d skip redis registration for %s@%d because of invalid redis context.\n", __func__, __LINE__, app_id, surface_id);
 			break;
+		}
+
+
 
 		weston_log("%s - %d register: %s@%d\n",
 				__func__, __LINE__,
@@ -202,16 +210,20 @@ get_id(struct ivi_id_agent *ida, struct ivi_layout_surface *layout_surface)
 	    struct weston_desktop_surface *wds = weston_surface_get_desktop_surface(
 		    weston_surface);
 
-	    if (weston_desktop_surface_get_app_id(wds) != NULL)
-		temp_app_id = strdup(weston_desktop_surface_get_app_id(wds));
-
-	    if (temp_app_id)
-		    weston_log("Found Application: %s\n", temp_app_id);
-
 	    if (weston_desktop_surface_get_title(wds) != NULL)
 		temp_title = strdup(weston_desktop_surface_get_title(wds));
 
+	    if (weston_desktop_surface_get_app_id(wds) != NULL) {
+		temp_app_id = strdup(weston_desktop_surface_get_app_id(wds));
+	    } else if (temp_title) {
+		weston_log("No app id found, use app title instead: %s\n", temp_title);
+		temp_app_id = strdup(temp_title);
+	    }
 
+	    if (temp_app_id)
+		    weston_log("Found Application: %s\n", temp_app_id);
+	    else
+		    weston_log("Warning: No app id found\n");
 
 	    if (get_id_from_config(ida, layout_surface,
 			temp_app_id, temp_title) == IVI_SUCCEEDED)
@@ -278,8 +290,11 @@ desktop_surface_event_configure(struct wl_listener *listener,
     struct ivi_layout_surface *layout_surface =
             (struct ivi_layout_surface *) data;
 
-    if (get_id(ida, layout_surface) == IVI_FAILED)
+    int32_t surface_id = ida->interface->get_id_of_surface(layout_surface);
+    if (surface_id == IVI_INVALID_ID) {
+	if (get_id(ida, layout_surface) == IVI_FAILED)
         weston_log("ivi-id-agent: Could not create surface_id for application\n");
+    }
 }
 
 static void
