@@ -88,9 +88,8 @@ static void redis_connect(struct ivi_id_agent *ida)
 		sleep(1);
 	}
 
-	if (valid_redis_ctx(ida->redis_ctx)) {
+	if (valid_redis_ctx(ida->redis_ctx))
 		weston_log("Connected to REDIS server successfully.\n");
-	}
 }
 
 
@@ -98,24 +97,19 @@ static void redis_reg(struct ivi_id_agent *ida,
 		const char* app_id, int32_t surface_id)
 {
 	do {
-		if (!ida || !valid_redis_ctx(ida->redis_ctx)) {
-			weston_log("Warning: %s - %d skip redis registration for %s@%d because of invalid redis context.\n", __func__, __LINE__, app_id, surface_id);
+		if (!ida || !valid_redis_ctx(ida->redis_ctx))
 			break;
-		}
 
 		if (!app_id) {
-			weston_log("Warning: %s - %d skip redis registration for null app id.\n", __func__, __LINE__);
+			weston_log("Warning: null app id.\n");
 			break;
 		}
 
 		if (surface_id <= 0) {
-			weston_log("Warning: %s - %d skip redis registration for invalud surface id: %d.\n", __func__, __LINE__, surface_id);
+			weston_log("Warning: invalud surface id: %d.\n", surface_id);
 			break;
 		}
 
-		weston_log("%s - %d register: %s@%d\n",
-				__func__, __LINE__,
-				app_id, surface_id);
 
 		redisReply *reply = redisCommand(ida->redis_ctx,
 				"SET %s %d",
@@ -128,8 +122,7 @@ static void redis_reg(struct ivi_id_agent *ida,
 				surface_id,
 				app_id);
 		freeReplyObject(reply);
-		weston_log("Registerred %s@%d\n",
-			app_id, surface_id);
+		weston_log("Registerred %s@%d\n", app_id, surface_id);
 
 	} while(0);
 
@@ -146,24 +139,19 @@ static void redis_unreg(struct ivi_id_agent *ida, int32_t surface_id)
 		if (surface_id <= 0)
 			break;
 
-		redisReply *reply = redisCommand(ida->redis_ctx,
-				"GET SURID-%d",
-				surface_id);
+		redisReply *reply = redisCommand(ida->redis_ctx, "GET SURID-%d", surface_id);
 		if (reply->str)
 			app_id = strdup(reply->str);
 		freeReplyObject(reply);
 
-		reply = redisCommand(ida->redis_ctx,
-				"DEL SURID-%d",
-				surface_id);
+		reply = redisCommand(ida->redis_ctx, "DEL SURID-%d", surface_id);
 		freeReplyObject(reply);
 
 		if (app_id) {
 			reply = redisCommand(ida->redis_ctx,
 					"DEL %s", app_id);
 			freeReplyObject(reply);
-			weston_log("Unregisterred %s@%d\n",
-					app_id, surface_id);
+			weston_log("Unregisterred %s@%d\n", app_id, surface_id);
 		}
 
 	} while(0);
