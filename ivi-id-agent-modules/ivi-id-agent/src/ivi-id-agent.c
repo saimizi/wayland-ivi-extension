@@ -53,6 +53,8 @@ struct ivi_id_agent
     struct weston_compositor *compositor;
     const struct ivi_layout_interface *interface;
     redisContext *redis_ctx;
+    const char *redis_server;
+    int32_t redis_port;
 
     struct wl_listener desktop_surface_configured;
     struct wl_listener destroy_listener;
@@ -63,10 +65,44 @@ struct ivi_id_agent
 #define REDIS_SERVER_IP "127.0.0.1"
 #define REDIS_SERVER_PORT 6379
 
+static void redis_connect(struct ivi_id_agent *ida)
+{
+	int retry = 10;
+
+	if (!ida->redis_server) {
+		weston_log("Skip using REDIS server.\n");
+		return;
+	}
+
+	weston_log("Try to connect REDIS server '%s:%d'\n",
+		ida->redis_server,
+		ida->redis_port);
+
+	while (!valid_redis_ctx(ida->redis_ctx)) {
+		ida->redis_ctx = redisConnect(ida->redis_server, ida->redis_port);
+		if (retry-- == 0) {
+			weston_log("Failed to connect REDIS server.\n");
+			break;
+		}
+
+		sleep(1);
+	}
+
+	if (valid_redis_ctx(ida->redis_ctx)) {
+		weston_log("Connected to REDIS server successfully.\n");
+	}
+}
+
+
 static void redis_reg(struct ivi_id_agent *ida,
 		const char* app_id, int32_t surface_id)
 {
 	do {
+		if (!ida || !valid_redis_ctx(ida->redis_ctx)) {
+			weston_log("Warning: %s - %d skip redis registration for %s@%d because of invalid redis context.\n", __func__, __LINE__, app_id, surface_id);
+			break;
+		}
+
 		if (!app_id) {
 			weston_log("Warning: %s - %d skip redis registration for null app id.\n", __func__, __LINE__);
 			break;
@@ -76,13 +112,6 @@ static void redis_reg(struct ivi_id_agent *ida,
 			weston_log("Warning: %s - %d skip redis registration for invalud surface id: %d.\n", __func__, __LINE__, surface_id);
 			break;
 		}
-
-		if (!ida || !valid_redis_ctx(ida->redis_ctx)) {
-			weston_log("Warning: %s - %d skip redis registration for %s@%d because of invalid redis context.\n", __func__, __LINE__, app_id, surface_id);
-			break;
-		}
-
-
 
 		weston_log("%s - %d register: %s@%d\n",
 				__func__, __LINE__,
@@ -396,6 +425,28 @@ read_config(struct ivi_id_agent *ida)
     while (weston_config_next_section(config, &section, &name)) {
         struct db_elem *db_elem = NULL;
 
+	if (!strcmp(name, "redis-server")) {
+		weston_config_section_get_string(section, "server",
+                         &ida->redis_server, NULL);
+
+		if (ida->redis_server) {
+			if (strlen(ida->redis_server) == 0) {
+				ida->redis_server = NULL;
+				continue;
+			}
+
+			if (strcmp(ida->redis_server, "off") == 0) {
+				ida->redis_server = NULL;
+				continue;
+			}
+		}
+
+		weston_config_section_get_uint(section, "port",
+                         &ida->redis_port, REDIS_SERVER_PORT);
+
+		continue;
+	}
+
         if (strcmp(name, "desktop-app") != 0)
             continue;
 
@@ -460,26 +511,9 @@ id_agent_module_init(struct weston_compositor *compositor,
     ida->desktop_surface_configured.notify = desktop_surface_event_configure;
     ida->destroy_listener.notify = id_agent_module_deinit;
     ida->surface_removed.notify = surface_event_remove;
-
-    int retry = 10;
-    weston_log("Try to connect REDIS server %s:%d\n",
-		    REDIS_SERVER_IP,
-		    REDIS_SERVER_PORT);
-    while (!valid_redis_ctx(ida->redis_ctx)) {
-	ida->redis_ctx = redisConnect(REDIS_SERVER_IP,
-				REDIS_SERVER_PORT);
-	if (retry-- == 0) {
-	    weston_log("Failed to connect REDIS server.\n");
-	    break;
-	}
-
-	sleep(1);
-    }
-
-    if (valid_redis_ctx(ida->redis_ctx)) {
-	    weston_log("Connected to REDIS server successfully.\n");
-    }
-
+    ida->redis_ctx = NULL;
+    ida->redis_server = REDIS_SERVER_IP;
+    ida->redis_port = REDIS_SERVER_PORT;
 
     wl_signal_add(&compositor->destroy_signal, &ida->destroy_listener);
     ida->interface->add_listener_configure_desktop_surface(
@@ -492,6 +526,8 @@ id_agent_module_init(struct weston_compositor *compositor,
         deinit(ida);
         goto ivi_failed;
     }
+
+    redis_connect(ida);
 
     return IVI_SUCCEEDED;
 
