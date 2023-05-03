@@ -500,7 +500,12 @@ id_agent_module_init(struct weston_compositor *compositor,
     ida->destroy_listener.notify = id_agent_module_deinit;
     ida->surface_removed.notify = surface_event_remove;
     ida->redis_ctx = NULL;
-    ida->redis_server = REDIS_SERVER_IP;
+
+    char *redis_server = getenv("SYSTEM_REDIS_SERVER_IP");
+    if (!redis_server)
+	    redis_server = REDIS_SERVER_IP;
+
+    ida->redis_server = redis_server;
     ida->redis_port = REDIS_SERVER_PORT;
 
     wl_signal_add(&compositor->destroy_signal, &ida->destroy_listener);
