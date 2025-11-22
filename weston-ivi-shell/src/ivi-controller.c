@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dlfcn.h>
 
 #include <sys/mman.h>
 
@@ -514,9 +515,9 @@ controller_surface_screenshot(struct wl_client *client,
         goto err;
     }
 
-    result = lyt->surface_get_size(layout_surface, &width,
+    lyt->surface_get_size(layout_surface, &width,
                                    &height, &stride);
-    if ((result != IVI_SUCCEEDED) || !width || !height || !stride) {
+    if (!width || !height || !stride) {
         ivi_screenshot_send_error(
             screenshot, IVI_SCREENSHOT_ERROR_NO_CONTENT,
             "surface_screenshot: surface does not have content");
@@ -922,8 +923,8 @@ set_bkgnd_surface_prop(struct ivishell *shell)
     int32_t dest_width = 0;
     int32_t dest_height = 0;
     uint32_t count = 0;
-    int32_t x = 0;
-    int32_t y = 0;
+    double x = 0;
+    double y = 0;
 
     view = shell->bkgnd_view;
     compositor = shell->compositor;
@@ -935,15 +936,15 @@ set_bkgnd_surface_prop(struct ivishell *shell)
     wl_list_for_each(output, &compositor->output_list, link) {
         if (!count)
         {
-            x = output->x;
-            y = output->y;
+            x = output->pos.c.x;
+            y = output->pos.c.y;
             count++;
         }
-        dest_width = output->x + output->width;
+        dest_width = output->pos.c.x + output->width;
         if (output->height > dest_height)
             dest_height = output->height;
-        weston_log("set_bkgnd_surface_prop: o_name:%s x:%d y:%d o_width:%d o_height:%d\n",
-                   output->name, output->x, output->y, output->width, output->height);
+        weston_log("set_bkgnd_surface_prop: o_name:%s x:%f y:%f o_width:%d o_height:%d\n",
+                   output->name, output->pos.c.x, output->pos.c.y, output->width, output->height);
     }
 
     w_surface = view->surface;
@@ -959,7 +960,7 @@ set_bkgnd_surface_prop(struct ivishell *shell)
                       &shell->bkgnd_transform.matrix);
     weston_matrix_translate(&shell->bkgnd_transform.matrix, x, y, 0.0f);
 
-    weston_log("set_bkgnd_surface_prop: x:%d y:%d s_width:%d s_height:%d d_width:%d d_height:%d\n",
+    weston_log("set_bkgnd_surface_prop: x:%f y:%f s_width:%d s_height:%d d_width:%d d_height:%d\n",
                x, y, src_width, src_height, dest_width, dest_height);
 
     wl_list_insert(&view->geometry.transformation_list,
@@ -1263,79 +1264,21 @@ controller_screenshot_notify(struct wl_listener *listener, void *data)
         wl_container_of(listener, l, frame_listener);
 
     struct weston_output *output = l->output;
-    int32_t width = 0;
-    int32_t height = 0;
-    int32_t stride = 0;
-    uint32_t *readpixs = NULL;
-    uint32_t shm_format;
-    int fd;
-    size_t size;
-    pixman_format_code_t format = output->compositor->read_format;
+    (void)output;
+    (void)data;
 
     --output->disable_planes;
 
-    // map to shm buffer format
-    switch (format) {
-    case PIXMAN_a8r8g8b8:
-        shm_format = WL_SHM_FORMAT_ARGB8888;
-        break;
-    case PIXMAN_x8r8g8b8:
-        shm_format = WL_SHM_FORMAT_XRGB8888;
-        break;
-    case PIXMAN_a8b8g8r8:
-        shm_format = WL_SHM_FORMAT_ABGR8888;
-        break;
-    case PIXMAN_x8b8g8r8:
-        shm_format = WL_SHM_FORMAT_XBGR8888;
-        break;
-    default:
-        ivi_screenshot_send_error(l->screenshot,
-                                  IVI_SCREENSHOT_ERROR_NOT_SUPPORTED,
-                                  "unsupported pixel format");
-        goto err_fd;
-    }
-
-    width = output->current_mode->width;
-    height = output->current_mode->height;
-    stride = width * (PIXMAN_FORMAT_BPP(format) / 8);
-    size = stride * height;
-
-    fd = create_screenshot_file(size);
-    if (fd < 0) {
-        weston_log("screenshot: failed to create file of %zu bytes: %m\n",
-                   size);
-        ivi_screenshot_send_error(l->screenshot, IVI_SCREENSHOT_ERROR_IO_ERROR,
-                                  "failed to create screenshot file");
-        goto err_fd;
-    }
-
-    readpixs = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (readpixs == MAP_FAILED) {
-        weston_log("screenshot: failed to mmap %zu bytes: %m\n", size);
-        ivi_screenshot_send_error(l->screenshot, IVI_SCREENSHOT_ERROR_IO_ERROR,
-                                  "failed to create screenshot");
-        goto err_mmap;
-    }
-
-    if (output->compositor->renderer->read_pixels(output, format, readpixs,
-                                                  0, 0, width, height) < 0) {
-        ivi_screenshot_send_error(
-            l->screenshot, IVI_SCREENSHOT_ERROR_NOT_SUPPORTED,
-            "screenshot of given output is not supported by renderer");
-        goto err_readpix;
-    }
-
-    if (output->compositor->capabilities & WESTON_CAP_CAPTURE_YFLIP)
-        flip_y(stride, height, readpixs);
-
-    ivi_screenshot_send_done(l->screenshot, fd, width, height, stride,
-                             shm_format, timespec_to_msec(&output->frame_time));
-
-err_readpix:
-    munmap(readpixs, size);
-err_mmap:
-    close(fd);
-err_fd:
+    /* TODO: Weston 13 changed the screenshot/renderer API significantly.
+     * The pixel_format_info structure is now opaque and renderer->read_pixels
+     * is no longer directly accessible. This needs to be reimplemented using
+     * the new Weston 13 capture API (weston_output_capture_*).
+     * For now, returning an error to prevent crashes.
+     */
+    weston_log("Screenshot functionality temporarily disabled - needs update for Weston 13 API\n");
+    ivi_screenshot_send_error(l->screenshot,
+                              IVI_SCREENSHOT_ERROR_NOT_SUPPORTED,
+                              "screenshot needs update for Weston 13");
     wl_resource_destroy(l->screenshot);
 }
 
@@ -1366,11 +1309,9 @@ screenshot_frame_listener_destroy(struct wl_resource *resource)
 static void
 ivi_weston_output_damage(struct weston_output *output)
 {
-	struct weston_compositor *compositor = output->compositor;
-
-	pixman_region32_union(&compositor->primary_plane.damage,
-			      &compositor->primary_plane.damage,
-			      &output->region);
+	/* In Weston 13, damage tracking is handled internally.
+	 * We just need to schedule a repaint.
+	 */
 	weston_output_schedule_repaint(output);
 }
 
@@ -1942,13 +1883,8 @@ check_layout_layers(struct ivishell *shell)
     uint32_t id_layer = 0;
     int32_t length = 0;
     int32_t i = 0;
-    int32_t ret = 0;
 
-    ret = lyt->get_layers(&length, &pArray);
-    if(ret != 0) {
-        weston_log("failed to get layers at check_layout_layers\n");
-        return -1;
-    }
+    lyt->get_layers(&length, &pArray);
 
     if (length == 0) {
         /* if length is 0, pArray doesn't need to free.*/
@@ -1978,13 +1914,8 @@ check_layout_surfaces(struct ivishell *shell)
     uint32_t id_surface = 0;
     int32_t length = 0;
     int32_t i = 0;
-    int32_t ret = 0;
 
-    ret = lyt->get_surfaces(&length, &pArray);
-    if(ret != 0) {
-        weston_log("failed to get surfaces at check_layout_surfaces\n");
-        return -1;
-    }
+    lyt->get_surfaces(&length, &pArray);
 
     if (length == 0) {
         /* if length is 0, pArray doesn't need to free.*/
@@ -2204,6 +2135,37 @@ setup_ivi_controller_server(struct weston_compositor *compositor,
     return 0;
 }
 
+/* Helper function to load a module entrypoint - replacement for wet_load_module_entrypoint
+ * which was removed in Weston 13 */
+static void *
+load_module_entrypoint(const char *module_path, const char *entrypoint_name)
+{
+    void *module;
+    void *init_func;
+
+    module = dlopen(module_path, RTLD_NOW | RTLD_NOLOAD);
+    if (module) {
+        weston_log("ivi-controller: Module %s already loaded\n", module_path);
+    } else {
+        module = dlopen(module_path, RTLD_NOW);
+        if (!module) {
+            weston_log("ivi-controller: Failed to load module %s: %s\n",
+                      module_path, dlerror());
+            return NULL;
+        }
+    }
+
+    init_func = dlsym(module, entrypoint_name);
+    if (!init_func) {
+        weston_log("ivi-controller: Failed to lookup %s in %s: %s\n",
+                  entrypoint_name, module_path, dlerror());
+        dlclose(module);
+        return NULL;
+    }
+
+    return init_func;
+}
+
 static int
 load_input_module(struct ivishell *shell)
 {
@@ -2222,7 +2184,7 @@ load_input_module(struct ivishell *shell)
         return 0;
     }
 
-    input_module_init = wet_load_module_entrypoint(input_module, "input_controller_module_init");
+    input_module_init = load_module_entrypoint(input_module, "input_controller_module_init");
     if (!input_module_init)
         return -1;
 
@@ -2269,8 +2231,8 @@ launch_client_process(void *data)
       setenv(IVI_CLIENT_ENABLE_CURSOR_ENV_NAME, option, 0x1);
     }
 
-    shell->client = weston_client_start(shell->compositor,
-                                        shell->ivi_client_name);
+    shell->client = wet_client_start(shell->compositor,
+                                     shell->ivi_client_name);
 
     shell->client_destroy_listener.notify = ivi_shell_client_destroy;
     wl_client_add_destroy_listener(shell->client,
@@ -2297,7 +2259,7 @@ static int load_id_agent_module(struct ivishell *shell)
         return 0;
     }
 
-    id_agent_module_init = wet_load_module_entrypoint(id_agent_module, "id_agent_module_init");
+    id_agent_module_init = load_module_entrypoint(id_agent_module, "id_agent_module_init");
     if (!id_agent_module_init)
         return -1;
 

@@ -26,7 +26,7 @@
 #include <limits.h>
 
 #include <weston.h>
-#include <libweston-desktop/libweston-desktop.h>
+#include <libweston/libweston.h>
 #include <libweston/config-parser.h>
 #include <ivi-layout-export.h>
 #include <hiredis/hiredis.h>

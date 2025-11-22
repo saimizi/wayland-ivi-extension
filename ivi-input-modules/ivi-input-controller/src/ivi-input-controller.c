@@ -542,11 +542,12 @@ input_ctrl_ptr_set_west_focus(struct seat_ctx *ctx_seat,
 
     if (NULL == view) {
         view = weston_compositor_pick_view(pointer->seat->compositor,
-                       pointer->x, pointer->y,
-                       &sx, &sy);
+                       pointer->pos);
     } else {
-        weston_view_from_global_fixed(view, pointer->x,
-                        pointer->y, &sx, &sy);
+        struct weston_coord_surface surf_pos;
+        surf_pos = weston_coord_global_to_surface(view, pointer->pos);
+        sx = wl_fixed_from_double(surf_pos.c.x);
+        sy = wl_fixed_from_double(surf_pos.c.y);
     }
 
     if (pointer->focus != view) {
@@ -569,13 +570,13 @@ input_ctrl_ptr_set_west_focus(struct seat_ctx *ctx_seat,
                         ctx_seat, ILM_INPUT_DEVICE_POINTER, ILM_TRUE);
 
                 if (st_focus != NULL) {
-                    weston_pointer_set_focus(pointer, view, sx, sy);
+                    weston_pointer_set_focus(pointer, view);
                 } else {
                     if (NULL != pointer->focus)
                         weston_pointer_clear_focus(pointer);
                 }
             } else {
-                weston_pointer_set_focus(pointer, view, sx, sy);
+                weston_pointer_set_focus(pointer, view);
             }
         } else {
             if (NULL != pointer->focus)
@@ -749,14 +750,20 @@ input_ctrl_touch_set_west_focus(struct seat_ctx *ctx_seat,
         }
 
         if (st_focus != NULL) {
-            weston_touch_send_down(touch, time, touch_id, x, y);
+            struct weston_coord_global pos = {
+                .c = { .x = wl_fixed_to_double(x), .y = wl_fixed_to_double(y) }
+            };
+            weston_touch_send_down(touch, time, touch_id, pos);
 
         } else {
             weston_touch_set_focus(touch, NULL);
         }
     } else {
         /*Support non ivi-surfaces like input panel*/
-        weston_touch_send_down(touch, time, touch_id, x, y);
+        struct weston_coord_global pos = {
+            .c = { .x = wl_fixed_to_double(x), .y = wl_fixed_to_double(y) }
+        };
+        weston_touch_send_down(touch, time, touch_id, pos);
     }
 }
 
@@ -813,7 +820,7 @@ input_ctrl_touch_clear_focus(struct seat_ctx *ctx_seat)
 
 static void
 touch_grab_down(struct weston_touch_grab *grab, const struct timespec *time,
-                int touch_id, wl_fixed_t x, wl_fixed_t y)
+                int touch_id, struct weston_coord_global pos)
 {
     struct seat_ctx *seat = wl_container_of(grab, seat, touch_grab);
 
@@ -822,7 +829,8 @@ touch_grab_down(struct weston_touch_grab *grab, const struct timespec *time,
         return;
 
     input_ctrl_touch_set_west_focus(seat, grab->touch, time, touch_id,
-                                    x, y);
+                                    wl_fixed_from_double(pos.c.x),
+                                    wl_fixed_from_double(pos.c.y));
 }
 
 static void
@@ -848,9 +856,9 @@ touch_grab_up(struct weston_touch_grab *grab, const struct timespec *time,
 
 static void
 touch_grab_motion(struct weston_touch_grab *grab, const struct timespec *time, int touch_id,
-                  wl_fixed_t x, wl_fixed_t y)
+                  struct weston_coord_global pos)
 {
-    weston_touch_send_motion(grab->touch, time, touch_id, x, y);
+    weston_touch_send_motion(grab->touch, time, touch_id, pos);
 }
 
 static void
