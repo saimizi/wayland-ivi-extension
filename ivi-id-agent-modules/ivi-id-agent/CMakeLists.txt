@@ -25,8 +25,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_SERVER wayland-server REQUIRED)
 pkg_check_modules(WESTON weston>=6.0.0 REQUIRED)
 pkg_check_modules(PIXMAN pixman-1 REQUIRED)
-pkg_check_modules(LIBWESTON_DESKTOP libweston-desktop-10 REQUIRED)
-pkg_check_modules(LIBWESTON libweston-10 REQUIRED)
+pkg_check_modules(LIBWESTON libweston-13 REQUIRED)
 
 find_package(Threads REQUIRED)
 
@@ -40,7 +39,6 @@ include_directories(
 link_directories(
     ${WAYLAND_SERVER_LIBRARY_DIRS}
     ${PIXMAN_LIBRARY_DIRS}
-    ${LIBWESTON_DESKTOP_LIBRARY_DIRS}
 )
 
 
@@ -53,7 +51,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 set(LIBS
     ${LIBS}
     ${WAYLAND_SERVER_LIBRARIES}
-    ${LIBWESTON_DESKTOP_LIBRARIES}
     hiredis
 )
 
